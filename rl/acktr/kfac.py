@@ -4,7 +4,7 @@ from functools import reduce
 from rl.acktr.kfac_utils import *
 
 KFAC_OPS = ['MatMul', 'Conv2D', 'BiasAdd']
-KFAC_DEBUG = True
+KFAC_DEBUG = False
 
 
 class KfacOptimizer():

@@ -48,7 +48,7 @@ class Model(object):
                 h = k
         pointer[h] = num_agents
 
-        print(pointer)
+        # print(pointer)
 
         A, ADV, R, PG_LR = [], [], [], []
         for k in range(num_agents):
@@ -58,7 +58,7 @@ class Model(object):
                 R.append(R[-1])
                 PG_LR.append(PG_LR[-1])
             else:
-                print(k)
+                # print(k)
                 # NOTE: Seems like action input should be an index of discrete action.
                 # A.append(tf.placeholder(tf.int32, [nbatch * scale[k], ac_space[k].shape[0]]))
                 A.append(tf.placeholder(tf.int32, [nbatch * scale[k]], name='A%d' % k))
@@ -475,7 +475,7 @@ def learn(policy, env, seed, total_timesteps=int(40e6), gamma=0.995, lam=0.95, l
             logger.record_tabular("total_timesteps", update*nbatch)
             logger.record_tabular("fps", fps)
             for k in range(model.num_agents):
-                # logger.record_tabular('reward %d' % k, np.mean(rewards[k]))
+                logger.record_tabular("reward %d" % k, np.mean(rewards[k]))
                 logger.record_tabular("explained_variance %d" % k, float(ev[k]))
                 logger.record_tabular("policy_entropy %d" % k, float(policy_entropy[k]))
                 logger.record_tabular("policy_loss %d" % k, float(policy_loss[k]))
