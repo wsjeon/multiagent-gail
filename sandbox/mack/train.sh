@@ -6,8 +6,8 @@
 #SBATCH --job-name="train"
 #SBATCH --output=/home/jeonwons/scratch/slurm_output/slurm-%a.out
 #SBATCH --open-mode="truncate"
-#SBATCH --time=72:00:00
-#SBATCH --array=0-9
+#SBATCH --time=3:00:00
+#SBATCH --array=0-139
 
 module load singularity
 export LC_ALL=C.UTF-8
