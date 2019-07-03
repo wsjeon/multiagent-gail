@@ -6,7 +6,9 @@
 #SBATCH --job-name="train"
 #SBATCH --output=/home/jeonwons/scratch/slurm_output/slurm-%a.out
 #SBATCH --open-mode="truncate"
-#SBATCH --time=3:00:00
+#SBATCH --time=20:00:00
+#SBATCH --mail-user=jeonwons@mila.quebec
+#SBATCH --mail-type=ARRAY_TASKS,ALL,TIME_LIMIT_50,TIME_LIMIT_80,TIME_LIMIT_90,TIME_LIMIT
 #SBATCH --array=0-139
 
 module load singularity

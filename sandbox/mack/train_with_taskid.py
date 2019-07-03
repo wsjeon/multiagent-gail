@@ -21,11 +21,11 @@ def main(slurm_task_id):
     seed = list(range(10))
 
     # NOTE: Totally, 7 x 2 x 10 = 140 configurations.
-    hyperparameters_list = list(itertools.product(max_episode_len,
-                                                  env,
-                                                  seed))
+    hyperparameters_list = list(itertools.product(seed,
+                                                  max_episode_len,
+                                                  env))
     hyperparameters = hyperparameters_list[slurm_task_id]
-    max_episode_len, env, seed = hyperparameters
+    seed, max_episode_len, env = hyperparameters
     logdir = os.path.join(os.environ['HOME'], "ray_results/MACK_MPE_v2")
 
     interpreter = "python -u "
