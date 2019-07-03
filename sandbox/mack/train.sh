@@ -22,10 +22,9 @@ export PROJECT_DIR=PycharmProjects/multiagent-gail
 
 # 3. Executing your code with singularity
 
-# singularity exec --nv \
-singularity exec \
+singularity exec --nv \
         -H $HOME:/home \
-        -B $SCRATCH:/dataset/ \
+        -B $SLURM_TMPDIR:/dataset/ \
         -B $SCRATCH:/tmp_log/ \
         -B $SCRATCH:/final_log/ \
         $SCRATCH/singularity-images/$CONTAINER_NAME \
