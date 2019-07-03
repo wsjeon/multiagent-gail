@@ -8,6 +8,8 @@
 #SBATCH --array=0-9
 
 module load singularity
+export LC_ALL=C.UTF-8
+export LANG=C.UTF-8
 
 # 0. Setting
 echo $HOSTNAME
