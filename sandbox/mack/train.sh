@@ -1,11 +1,14 @@
 #!/bin/bash -x
-#SBATCH --cpus-per-task=4
+#SBATCH --account=rpp-bengioy
+#SBATCH --cpus-per-task=6
 #SBATCH --gres=gpu:1
 #SBATCH --mem=10G
 #SBATCH --job-name="train"
-#SBATCH --output=/network/tmp1/jeonwons/slurm_output/slurm-%a.out
+#SBATCH --output=/home/jeonwons/scratch/slurm_output/slurm-%a.out
 #SBATCH --open-mode="truncate"
 #SBATCH --array=0-9
+
+module load singularity
 
 # 0. Setting
 echo $HOSTNAME
@@ -22,7 +25,7 @@ export PROJECT_DIR=PycharmProjects/multiagent-gail
 # singularity exec --nv \
 singularity exec \
         -H $HOME:/home \
-        -B $SLURM_TMPDIR:/dataset/ \
+        -B $SCRATCH:/dataset/ \
         -B $SCRATCH:/tmp_log/ \
         -B $SCRATCH:/final_log/ \
         $SCRATCH/singularity-images/$CONTAINER_NAME \
