@@ -17,6 +17,9 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 
 def train(logdir, env_id, num_timesteps, lr, timesteps_per_batch, seed, num_cpu, max_episode_len):
+    if os.path.exists(logdir):
+        raise ValueError("This simulation was already done!")
+
     def create_env(rank):
         def _thunk():
             env = make_env.make_env(env_id, max_episode_len=max_episode_len)
@@ -60,7 +63,7 @@ def main(logdir, env, lr, seed, batch_size, atlas, max_episode_len):
     print('logging to: ' + logdir)
 
     for env_id, seed, lr, batch_size, max_episode_len in itertools.product(env_ids, seeds, lrs, batch_sizes, max_episode_lens):
-        train(logdir + '{}-{}'.format(env_id, max_episode_len) + '/l-{}-b-{}/seed-{}'.format(lr, batch_size, seed),
+        train(logdir + '{}-{}'.format(env_id, str(max_episode_len)) + '/l-{}-b-{}/seed-{}'.format(lr, batch_size, seed),
               env_id, 5e7, lr, batch_size, seed, batch_size // 250, max_episode_len)
 
 
