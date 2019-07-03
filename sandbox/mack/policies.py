@@ -13,9 +13,9 @@ class CategoricalPolicy(object):
         all_ob_shape = (nbatch, sum([obs.shape[0] for obs in ob_spaces]) * nstack)
         nact = ac_space.n
         all_ac_shape = (nbatch, (sum([ac.n for ac in ac_spaces]) - nact) * nstack)
-        X = tf.placeholder(tf.float32, ob_shape)  # obs
-        X_v = tf.placeholder(tf.float32, all_ob_shape)
-        A_v = tf.placeholder(tf.float32, all_ac_shape)
+        X = tf.placeholder(tf.float32, ob_shape, name='X')  # obs
+        X_v = tf.placeholder(tf.float32, all_ob_shape, name='X_v')
+        A_v = tf.placeholder(tf.float32, all_ac_shape, name='A_v')
         with tf.variable_scope('policy_{}'.format(name), reuse=reuse):
             h1 = fc(X, 'fc1', nh=128, init_scale=np.sqrt(2))
             h2 = fc(h1, 'fc2', nh=128, init_scale=np.sqrt(2))

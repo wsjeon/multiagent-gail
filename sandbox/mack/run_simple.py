@@ -20,6 +20,7 @@ def train(logdir, env_id, num_timesteps, lr, timesteps_per_batch, seed, num_cpu,
     def create_env(rank):
         def _thunk():
             env = make_env.make_env(env_id, max_episode_len=max_episode_len)
+            env.discrete_action_input = True
             env.seed(seed + rank)
             env = bench.Monitor(env, logger.get_dir() and os.path.join(logger.get_dir(), str(rank)),
                                 allow_early_resets=True)
@@ -38,10 +39,10 @@ def train(logdir, env_id, num_timesteps, lr, timesteps_per_batch, seed, num_cpu,
 
 
 @click.command()
-@click.option('--logdir', type=click.STRING, default='/atlas/u/lantaoyu')
+@click.option('--logdir', type=click.STRING, default='/tmp/atlas/u/lantaoyu')
 @click.option('--env', type=click.Choice(['simple', 'simple_speaker_listener',
                                           'simple_crypto', 'simple_push',
-                                          'simple_tag', 'simple_spread', 'simple_adversary']))
+                                          'simple_tag', 'simple_spread', 'simple_adversary']), default='simple_push')
 @click.option('--lr', type=click.FLOAT, default=0.1)
 @click.option('--seed', type=click.INT, default=1)
 @click.option('--batch_size', type=click.INT, default=1000)

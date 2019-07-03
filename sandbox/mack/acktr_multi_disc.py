@@ -11,6 +11,14 @@ from rl.acktr import kfac
 from rl.common import set_global_seeds, explained_variance
 
 
+# NOTE: one-hot encoding is required
+def one_hot(ac, n):
+    size = ac.size
+    one_hot_ac = np.zeros((size, n))
+    one_hot_ac[np.arange(size), np.array(ac, dtype=np.int32)] = 1
+    return one_hot_ac
+
+
 class Model(object):
 
     def __init__(self, policy, ob_space, ac_space, nenvs, total_timesteps, nprocs=2, nsteps=200,
@@ -22,8 +30,9 @@ class Model(object):
         config.gpu_options.allow_growth = True
         self.sess = sess = tf.Session(config=config)
         nbatch = nenvs * nsteps
-        ob_space = [ob_space]
-        ac_space = [ac_space]
+        # NOTE: They don't have to make it as list.
+        # ob_space = [ob_space]
+        # ac_space = [ac_space]
         self.num_agents = num_agents = len(ob_space)
         if identical is None:
             identical = [False for _ in range(self.num_agents)]
@@ -49,10 +58,14 @@ class Model(object):
                 R.append(R[-1])
                 PG_LR.append(PG_LR[-1])
             else:
-                A.append(tf.placeholder(tf.int32, [nbatch * scale[k], ac_space[k].shape[0]]))
-                ADV.append(tf.placeholder(tf.float32, [nbatch * scale[k]]))
-                R.append(tf.placeholder(tf.float32, [nbatch * scale[k]]))
-                PG_LR.append(tf.placeholder(tf.float32, []))
+                print(k)
+                # NOTE: Seems like action input should be an index of discrete action.
+                # A.append(tf.placeholder(tf.int32, [nbatch * scale[k], ac_space[k].shape[0]]))
+                A.append(tf.placeholder(tf.int32, [nbatch * scale[k]], name='A%d' % k))
+                ADV.append(tf.placeholder(tf.float32, [nbatch * scale[k]], name='ADV%d' % k))
+                R.append(tf.placeholder(tf.float32, [nbatch * scale[k]], name='R%d' % k))
+                PG_LR.append(tf.placeholder(tf.float32, [], name='PG_LR%d' % k))
+
 
         # A = [tf.placeholder(tf.int32, [nbatch]) for _ in range(num_agents)]
         # ADV = [tf.placeholder(tf.float32, [nbatch]) for _ in range(num_agents)]
@@ -78,10 +91,12 @@ class Model(object):
                                          nenvs, 1, nstack, reuse=False, name='%d' % k))
                 train_model.append(policy(sess, ob_space[k], ac_space[k], ob_space, ac_space,
                                           nenvs * scale[k], nsteps, nstack, reuse=True, name='%d' % k))
-
-            ac = ac_space[k].shape[0]
-            logpac = tf.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(
-                logits=train_model[k].pi, labels=A[k]), axis=1)
+            # NOTE: Unused
+            # ac = ac_space[k].shape[0]
+            # NOTE: tf.reduce_sum dimension mismatch. Maybe lld will cover this.
+            # logpac = tf.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(
+            #     logits=train_model[k].pi, labels=A[k]), axis=1)
+            logpac = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=train_model[k].pi, labels=A[k])
             # logpac = 0.5 * tf.reduce_sum(tf.square((A[k] - stats[:, :ac]) / stats[:, ac:]), axis=-1) \
             #          + 0.5 * np.log(2.0 * np.pi) * tf.to_float(tf.shape(A[k])[-1]) \
             #          + tf.reduce_sum(tf.log(stats[:, ac:]), axis=-1)
@@ -180,8 +195,11 @@ class Model(object):
                 cur_lr = self.lr.value()
 
             ob = np.concatenate(obs, axis=1)
-            int_actions = [np.minimum(10.0, np.maximum(0.0, np.floor((ac + 1.1) / 0.2))) for ac in actions]
-            int_actions = [ac.astype(np.int) for ac in int_actions]
+            # NOTE: one-hot encoding is required
+            # int_actions = [np.minimum(10.0, np.maximum(0.0, np.floor((ac + 1.1) / 0.2))) for ac in actions]
+            # int_actions = [ac.astype(np.int) for ac in int_actions]
+            int_actions = actions
+            actions = [one_hot(ac, ac_space[i].n) for i, ac in enumerate(actions)]
 
             td_map = {}
             for k in range(num_agents):
@@ -220,8 +238,10 @@ class Model(object):
         def clone(obs, actions):
             td_map = {}
             cur_lr = self.clone_lr.value()
-            int_actions = [np.minimum(10.0, np.maximum(0.0, np.floor((ac + 1.1) / 0.2))) for ac in actions]
-            int_actions = [ac.astype(np.int) for ac in int_actions]
+            # NOTE: one-hot encoding is required
+            # int_actions = [np.minimum(10.0, np.maximum(0.0, np.floor((ac + 1.1) / 0.2))) for ac in actions]
+            # int_actions = [ac.astype(np.int) for ac in int_actions]
+            int_actions = actions
             for k in range(num_agents):
                 new_map = {
                     train_model[k].X: obs[k],
@@ -254,6 +274,8 @@ class Model(object):
         def step(ob, av, *_args, **_kwargs):
             a, v, s = [], [], []
             obs = np.concatenate(ob, axis=1)
+            # NOTE: one-hot encoding is required
+            av = [one_hot(ac, ac_space[i].n) for i, ac in enumerate(av)]
             for k in range(num_agents):
                 if num_agents > 1:
                     a_v = np.concatenate([av[i] for i in range(num_agents) if i != k], axis=1)
@@ -270,6 +292,8 @@ class Model(object):
         def value(obs, av):
             v = []
             ob = np.concatenate(obs, axis=1)
+            # NOTE: one-hot encoding is required
+            av = [one_hot(ac, ac_space[i].n) for i, ac in enumerate(av)]
             for k in range(num_agents):
                 if num_agents > 1:
                     a_v = np.concatenate([av[i] for i in range(num_agents) if i != k], axis=1)
@@ -288,8 +312,10 @@ class Runner(object):
     def __init__(self, env, model, nsteps, nstack, gamma, lam):
         self.env = env
         self.model = model
-        ob_space = [env.observation_space]
-        ac_space = [env.action_space]
+        # NOTE: They don't have to make it as list
+        # ob_space = [env.observation_space]
+        # ac_space = [env.action_space]
+        self.ob_space, self.ac_space = ob_space, ac_space = env.observation_space, env.action_space
         self.num_agents = len(ob_space)
         self.nenv = nenv = env.num_envs
         self.batch_ob_shape = [
@@ -301,7 +327,8 @@ class Runner(object):
             np.zeros((nenv, )) for k in range(self.num_agents)
         ]
         obs = env.reset()
-        obs = [obs]
+        # NOTE: They don't have to make it as list
+        # obs = [obs]
         self.update_obs(obs)
         self.gamma = gamma
         self.lam = lam
@@ -338,8 +365,11 @@ class Runner(object):
             actions_list = []
             for i in range(self.nenv):
                 actions_list.append([actions[k][i] for k in range(self.num_agents)])
-            obs, rewards, dones, _ = self.env.step(actions_list[0])
-            obs, rewards, dones = [obs], [rewards], [dones]
+            # NOTE: They don't need to use [0] in this case.
+            # obs, rewards, dones, _ = self.env.step(actions_list[0])
+            obs, rewards, dones, _ = self.env.step(actions_list)
+            # NOTE: List is not needed.
+            # obs, rewards, dones = [obs], [rewards], [dones]
             self.states = states
             self.dones = dones
             for k in range(self.num_agents):
@@ -383,7 +413,9 @@ class Runner(object):
             mb_returns[k] = mb_returns[k].flatten()
             mb_masks[k] = mb_masks[k].flatten()
             mb_values[k] = mb_values[k].flatten()
-            mb_actions[k] = np.reshape(mb_actions[k], [-1, mb_actions[k].shape[-1]])
+            # NOTE: Reshape might not be needed.
+            # mb_actions[k] = np.reshape(mb_actions[k], [-1, mb_actions[k].shape[-1]])
+            mb_actions[k] = mb_actions[k].flatten()
 
         # mb_returns = [np.zeros_like(mb_rewards[k]) for k in range(self.num_agents)]
         # last_values = self.model.value(self.obs, self.actions)
