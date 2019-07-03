@@ -63,7 +63,7 @@ def main(logdir, env, lr, seed, batch_size, atlas, max_episode_len):
     print('logging to: ' + logdir)
 
     for env_id, seed, lr, batch_size, max_episode_len in itertools.product(env_ids, seeds, lrs, batch_sizes, max_episode_lens):
-        train(logdir + '{}-{}'.format(env_id, str(max_episode_len)) + '/l-{}-b-{}/seed-{}'.format(lr, batch_size, seed),
+        train(logdir + '/{}-{}'.format(env_id, str(max_episode_len)) + '/l-{}-b-{}/seed-{}'.format(lr, batch_size, seed),
               env_id, 5e7, lr, batch_size, seed, batch_size // 250, max_episode_len)
 
 
