@@ -1,6 +1,7 @@
 #!/bin/bash -x
-#SBATCH --account=def-bengioy
+#SBATCH --account=rpp-bengioy
 #SBATCH --cpus-per-task=6
+#SBATCH --gres=gpu:1
 #SBATCH --mem=10G
 #SBATCH --job-name="train"
 #SBATCH --output=/home/jeonwons/scratch/slurm_output/slurm-%a.out
