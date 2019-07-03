@@ -1,5 +1,5 @@
 #!/bin/bash -x
-#SBATCH --account=rpp-bengioy
+#SBATCH --account=def-bengioy
 #SBATCH --cpus-per-task=6
 #SBATCH --mem=10G
 #SBATCH --job-name="train"
