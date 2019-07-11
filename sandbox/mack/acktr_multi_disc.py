@@ -464,6 +464,7 @@ def learn(policy, env, seed, total_timesteps=int(40e6), gamma=0.995, lam=0.95, l
     coord = tf.train.Coordinator()
     # enqueue_threads = [q_runner.create_threads(model.sess, coord=coord, start=True) for q_runner in model.q_runner]
     for update in range(1, total_timesteps//nbatch+1):
+        # print(total_timesteps//nbatch); assert False  # NOTE: = 55000
         obs, states, rewards, masks, actions, values = runner.run()
         policy_loss, value_loss, policy_entropy = model.train(obs, states, rewards, masks, actions, values)
         model.old_obs = obs
