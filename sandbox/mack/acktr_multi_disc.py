@@ -391,8 +391,8 @@ class Runner(object):
             mb_actions[k] = np.asarray(mb_actions[k], dtype=np.int32).swapaxes(1, 0)
             mb_values[k] = np.asarray(mb_values[k], dtype=np.float32).swapaxes(1, 0)
             mb_dones[k] = np.asarray(mb_dones[k], dtype=np.bool).swapaxes(1, 0)
-            mb_masks[k] = mb_dones[k][:, :-1]
-            mb_dones[k] = mb_dones[k][:, 1:]
+            mb_masks[k] = mb_dones[k][:, :-1]  # FIXME: WHAT IS THE PURPOSE OF MASK HERE?
+            mb_dones[k] = mb_dones[k][:, 1:]  # NOTE: THIS IS TRUE DONES>>> OKAY
 
         last_values = self.model.value(self.obs, self.actions) # self.states, self.dones)
 
