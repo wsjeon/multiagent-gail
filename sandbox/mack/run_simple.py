@@ -1,6 +1,5 @@
 import logging
 import os
-import itertools
 import gym
 import make_env_v2 as make_env
 from rl import bench
