@@ -3,7 +3,7 @@ import click
 import rl.common.tf_util as U
 import multiagent
 import tensorflow as tf
-import make_env_v2 as make_env
+import make_env
 import gym.spaces
 import numpy as np
 import time

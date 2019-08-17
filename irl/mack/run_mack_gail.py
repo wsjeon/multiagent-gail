@@ -5,7 +5,7 @@ import itertools
 import click
 import gym
 
-import make_env_v2 as make_env
+import make_env
 from rl import bench
 from rl import logger
 from rl.common import set_global_seeds
@@ -17,11 +17,11 @@ from sandbox.mack.policies import CategoricalPolicy
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 
-def train(logdir, env_id, num_timesteps, lr, timesteps_per_batch, seed, num_cpu, max_episode_len, expert_path,
+def train(logdir, env_id, num_timesteps, lr, timesteps_per_batch, seed, num_cpu, expert_path,
           traj_limitation, ret_threshold, dis_lr, disc_type='decentralized', bc_iters=500):
     def create_env(rank):
         def _thunk():
-            env = make_env.make_env(env_id, max_episode_len=max_episode_len)
+            env = make_env.make_env(env_id)
             env.seed(seed + rank)
             env = bench.Monitor(env, logger.get_dir() and os.path.join(logger.get_dir(), str(rank)),
                                 allow_early_resets=True)
@@ -55,13 +55,11 @@ def train(logdir, env_id, num_timesteps, lr, timesteps_per_batch, seed, num_cpu,
 @click.option('--dis_lr', type=click.FLOAT, default=0.1)
 @click.option('--disc_type', type=click.Choice(['decentralized', 'centralized', 'single']), default='decentralized')
 @click.option('--bc_iters', type=click.INT, default=500)
-@click.option('--max_episode_len', type=click.INT, default=50)
-def main(logdir, env, expert_path, atlas, seed, traj_limitation, ret_threshold, dis_lr, disc_type, bc_iters, max_episode_len):
+def main(logdir, env, expert_path, atlas, seed, traj_limitation, ret_threshold, dis_lr, disc_type, bc_iters):
     env_ids = [env]
     lrs = [0.1]
     seeds = [seed]
     batch_sizes = [1000]
-    max_episode_lens = [max_episode_len]
 
     logdir = '/atlas/u/lantaoyu/exps'
 
@@ -72,10 +70,10 @@ def main(logdir, env, expert_path, atlas, seed, traj_limitation, ret_threshold, 
     # elif env == 'simple_tag':
     #     expert_path = '/atlas/u/lantaoyu/exps/mack/simple_tag/l-0.1-b-1000/seed-1/checkpoint11000.pkl'
 
-    for env_id, seed, lr, batch_size, max_episode_len in itertools.product(env_ids, seeds, lrs, batch_sizes, max_episode_lens):
+    for env_id, seed, lr, batch_size in itertools.product(env_ids, seeds, lrs, batch_sizes):
         train(logdir + '/gail/' + env_id + '/' + disc_type + '/s-{}/l-{}-b-{}-d-{}-c-{}/seed-{}'.format(
               traj_limitation, lr, batch_size, dis_lr, bc_iters, seed),
-              env_id, 5e7, lr, batch_size, seed, batch_size // 250, max_episode_len, expert_path,
+              env_id, 5e7, lr, batch_size, seed, batch_size // 250, expert_path,
               traj_limitation, ret_threshold, dis_lr, disc_type=disc_type, bc_iters=bc_iters)
 
 

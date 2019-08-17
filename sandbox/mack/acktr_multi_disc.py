@@ -1,23 +1,14 @@
-import os
+import os.path as osp
 import time
 
 import joblib
 import numpy as np
-import tensorflow.compat.v1 as tf
-tf.disable_v2_behavior()
+import tensorflow as tf
 from rl.acktr.utils import Scheduler, find_trainable_variables, discount_with_dones
 from rl.acktr.utils import cat_entropy, mse
 from rl import logger
 from rl.acktr import kfac
 from rl.common import set_global_seeds, explained_variance
-
-
-# NOTE: one-hot encoding is required
-def one_hot(ac, n):
-    size = ac.size
-    one_hot_ac = np.zeros((size, n))
-    one_hot_ac[np.arange(size), np.array(ac, dtype=np.int32)] = 1
-    return one_hot_ac
 
 
 class Model(object):
@@ -31,9 +22,8 @@ class Model(object):
         config.gpu_options.allow_growth = True
         self.sess = sess = tf.Session(config=config)
         nbatch = nenvs * nsteps
-        # NOTE: They don't have to make it as list.
-        # ob_space = [ob_space]
-        # ac_space = [ac_space]
+        ob_space = [ob_space]
+        ac_space = [ac_space]
         self.num_agents = num_agents = len(ob_space)
         if identical is None:
             identical = [False for _ in range(self.num_agents)]
@@ -49,7 +39,7 @@ class Model(object):
                 h = k
         pointer[h] = num_agents
 
-        # print(pointer)
+        print(pointer)
 
         A, ADV, R, PG_LR = [], [], [], []
         for k in range(num_agents):
@@ -59,14 +49,10 @@ class Model(object):
                 R.append(R[-1])
                 PG_LR.append(PG_LR[-1])
             else:
-                # print(k)
-                # NOTE: Seems like action input should be an index of discrete action.
-                # A.append(tf.placeholder(tf.int32, [nbatch * scale[k], ac_space[k].shape[0]]))
-                A.append(tf.placeholder(tf.int32, [nbatch * scale[k]], name='A%d' % k))
-                ADV.append(tf.placeholder(tf.float32, [nbatch * scale[k]], name='ADV%d' % k))
-                R.append(tf.placeholder(tf.float32, [nbatch * scale[k]], name='R%d' % k))
-                PG_LR.append(tf.placeholder(tf.float32, [], name='PG_LR%d' % k))
-
+                A.append(tf.placeholder(tf.int32, [nbatch * scale[k], ac_space[k].shape[0]]))
+                ADV.append(tf.placeholder(tf.float32, [nbatch * scale[k]]))
+                R.append(tf.placeholder(tf.float32, [nbatch * scale[k]]))
+                PG_LR.append(tf.placeholder(tf.float32, []))
 
         # A = [tf.placeholder(tf.int32, [nbatch]) for _ in range(num_agents)]
         # ADV = [tf.placeholder(tf.float32, [nbatch]) for _ in range(num_agents)]
@@ -92,12 +78,10 @@ class Model(object):
                                          nenvs, 1, nstack, reuse=False, name='%d' % k))
                 train_model.append(policy(sess, ob_space[k], ac_space[k], ob_space, ac_space,
                                           nenvs * scale[k], nsteps, nstack, reuse=True, name='%d' % k))
-            # NOTE: Unused
-            # ac = ac_space[k].shape[0]
-            # NOTE: tf.reduce_sum dimension mismatch. Maybe lld will cover this.
-            # logpac = tf.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(
-            #     logits=train_model[k].pi, labels=A[k]), axis=1)
-            logpac = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=train_model[k].pi, labels=A[k])
+
+            ac = ac_space[k].shape[0]
+            logpac = tf.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(
+                logits=train_model[k].pi, labels=A[k]), axis=1)
             # logpac = 0.5 * tf.reduce_sum(tf.square((A[k] - stats[:, :ac]) / stats[:, ac:]), axis=-1) \
             #          + 0.5 * np.log(2.0 * np.pi) * tf.to_float(tf.shape(A[k])[-1]) \
             #          + tf.reduce_sum(tf.log(stats[:, ac:]), axis=-1)
@@ -196,11 +180,8 @@ class Model(object):
                 cur_lr = self.lr.value()
 
             ob = np.concatenate(obs, axis=1)
-            # NOTE: one-hot encoding is required
-            # int_actions = [np.minimum(10.0, np.maximum(0.0, np.floor((ac + 1.1) / 0.2))) for ac in actions]
-            # int_actions = [ac.astype(np.int) for ac in int_actions]
-            int_actions = actions
-            actions = [one_hot(ac, ac_space[i].n) for i, ac in enumerate(actions)]
+            int_actions = [np.minimum(10.0, np.maximum(0.0, np.floor((ac + 1.1) / 0.2))) for ac in actions]
+            int_actions = [ac.astype(np.int) for ac in int_actions]
 
             td_map = {}
             for k in range(num_agents):
@@ -239,10 +220,8 @@ class Model(object):
         def clone(obs, actions):
             td_map = {}
             cur_lr = self.clone_lr.value()
-            # NOTE: one-hot encoding is required
-            # int_actions = [np.minimum(10.0, np.maximum(0.0, np.floor((ac + 1.1) / 0.2))) for ac in actions]
-            # int_actions = [ac.astype(np.int) for ac in int_actions]
-            int_actions = actions
+            int_actions = [np.minimum(10.0, np.maximum(0.0, np.floor((ac + 1.1) / 0.2))) for ac in actions]
+            int_actions = [ac.astype(np.int) for ac in int_actions]
             for k in range(num_agents):
                 new_map = {
                     train_model[k].X: obs[k],
@@ -275,8 +254,6 @@ class Model(object):
         def step(ob, av, *_args, **_kwargs):
             a, v, s = [], [], []
             obs = np.concatenate(ob, axis=1)
-            # NOTE: one-hot encoding is required
-            av = [one_hot(ac, ac_space[i].n) for i, ac in enumerate(av)]
             for k in range(num_agents):
                 if num_agents > 1:
                     a_v = np.concatenate([av[i] for i in range(num_agents) if i != k], axis=1)
@@ -293,8 +270,6 @@ class Model(object):
         def value(obs, av):
             v = []
             ob = np.concatenate(obs, axis=1)
-            # NOTE: one-hot encoding is required
-            av = [one_hot(ac, ac_space[i].n) for i, ac in enumerate(av)]
             for k in range(num_agents):
                 if num_agents > 1:
                     a_v = np.concatenate([av[i] for i in range(num_agents) if i != k], axis=1)
@@ -313,10 +288,8 @@ class Runner(object):
     def __init__(self, env, model, nsteps, nstack, gamma, lam):
         self.env = env
         self.model = model
-        # NOTE: They don't have to make it as list
-        # ob_space = [env.observation_space]
-        # ac_space = [env.action_space]
-        self.ob_space, self.ac_space = ob_space, ac_space = env.observation_space, env.action_space
+        ob_space = [env.observation_space]
+        ac_space = [env.action_space]
         self.num_agents = len(ob_space)
         self.nenv = nenv = env.num_envs
         self.batch_ob_shape = [
@@ -328,8 +301,7 @@ class Runner(object):
             np.zeros((nenv, )) for k in range(self.num_agents)
         ]
         obs = env.reset()
-        # NOTE: They don't have to make it as list
-        # obs = [obs]
+        obs = [obs]
         self.update_obs(obs)
         self.gamma = gamma
         self.lam = lam
@@ -366,11 +338,8 @@ class Runner(object):
             actions_list = []
             for i in range(self.nenv):
                 actions_list.append([actions[k][i] for k in range(self.num_agents)])
-            # NOTE: They don't need to use [0] in this case.
-            # obs, rewards, dones, _ = self.env.step(actions_list[0])
-            obs, rewards, dones, _ = self.env.step(actions_list)
-            # NOTE: List is not needed.
-            # obs, rewards, dones = [obs], [rewards], [dones]
+            obs, rewards, dones, _ = self.env.step(actions_list[0])
+            obs, rewards, dones = [obs], [rewards], [dones]
             self.states = states
             self.dones = dones
             for k in range(self.num_agents):
@@ -391,14 +360,13 @@ class Runner(object):
             mb_actions[k] = np.asarray(mb_actions[k], dtype=np.int32).swapaxes(1, 0)
             mb_values[k] = np.asarray(mb_values[k], dtype=np.float32).swapaxes(1, 0)
             mb_dones[k] = np.asarray(mb_dones[k], dtype=np.bool).swapaxes(1, 0)
-            mb_masks[k] = mb_dones[k][:, :-1]  # FIXME: WHAT IS THE PURPOSE OF MASK HERE?
-            mb_dones[k] = mb_dones[k][:, 1:]  # NOTE: THIS IS TRUE DONES>>> OKAY
+            mb_masks[k] = mb_dones[k][:, :-1]
+            mb_dones[k] = mb_dones[k][:, 1:]
 
         last_values = self.model.value(self.obs, self.actions) # self.states, self.dones)
 
         mb_advs = [np.zeros_like(mb_rewards[k]) for k in range(self.num_agents)]
         mb_returns = [[] for _ in range(self.num_agents)]
-        mb_true_returns = [mb_rewards[k].flatten() for k in range(self.num_agents)]
 
         lastgaelam = 0.0
         for k in range(self.num_agents):
@@ -415,9 +383,7 @@ class Runner(object):
             mb_returns[k] = mb_returns[k].flatten()
             mb_masks[k] = mb_masks[k].flatten()
             mb_values[k] = mb_values[k].flatten()
-            # NOTE: Reshape might not be needed.
-            # mb_actions[k] = np.reshape(mb_actions[k], [-1, mb_actions[k].shape[-1]])
-            mb_actions[k] = mb_actions[k].flatten()
+            mb_actions[k] = np.reshape(mb_actions[k], [-1, mb_actions[k].shape[-1]])
 
         # mb_returns = [np.zeros_like(mb_rewards[k]) for k in range(self.num_agents)]
         # last_values = self.model.value(self.obs, self.actions)
@@ -438,50 +404,58 @@ class Runner(object):
         #     mb_values[k] = mb_values[k].flatten()
         #     mb_actions[k] = np.reshape(mb_actions[k], [-1, mb_actions[k].shape[-1]])
 
-        return mb_obs, mb_states, mb_returns, mb_masks, mb_actions, mb_values, mb_true_returns
+        return mb_obs, mb_states, mb_returns, mb_masks, mb_actions, mb_values
 
 
 def learn(policy, env, seed, total_timesteps=int(40e6), gamma=0.995, lam=0.95, log_interval=1, nprocs=32, nsteps=20,
           nstack=1, ent_coef=0.00, vf_coef=0.5, vf_fisher_coef=1.0, lr=0.25, max_grad_norm=0.5,
-          kfac_clip=0.001, save_interval=100, lrschedule='linear', identical=None, max_episode_len=50):
+          kfac_clip=0.001, save_interval=100, lrschedule='linear', identical=None):
     tf.reset_default_graph()
     set_global_seeds(seed)
 
     nenvs = env.num_envs
     ob_space = env.observation_space
     ac_space = env.action_space
-    make_model = lambda: Model(policy, ob_space, ac_space, nenvs, total_timesteps, nprocs=nprocs, nsteps=nsteps,
-                               nstack=nstack, ent_coef=ent_coef, vf_coef=vf_coef, vf_fisher_coef=vf_fisher_coef,
-                               lr=lr, max_grad_norm=max_grad_norm, kfac_clip=kfac_clip,
-                               lrschedule=lrschedule, identical=identical)
+    make_model = lambda: Model(policy, ob_space, ac_space, nenvs, total_timesteps, nprocs=nprocs, nsteps
+                                =nsteps, nstack=nstack, ent_coef=ent_coef, vf_coef=vf_coef, vf_fisher_coef=
+                                vf_fisher_coef, lr=lr, max_grad_norm=max_grad_norm, kfac_clip=kfac_clip,
+                                lrschedule=lrschedule, identical=identical)
     if save_interval and logger.get_dir():
         import cloudpickle
-        with open(os.path.join(logger.get_dir(), 'make_model.pkl'), 'wb') as fh:
+        with open(osp.join(logger.get_dir(), 'make_model.pkl'), 'wb') as fh:
             fh.write(cloudpickle.dumps(make_model))
     model = make_model()
 
     runner = Runner(env, model, nsteps=nsteps, nstack=nstack, gamma=gamma, lam=lam)
-    nbatch = nenvs * nsteps
+    nbatch = nenvs*nsteps
+    tstart = time.time()
     coord = tf.train.Coordinator()
     # enqueue_threads = [q_runner.create_threads(model.sess, coord=coord, start=True) for q_runner in model.q_runner]
-    for update in range(1, total_timesteps // nbatch + 1):
-        obs, states, rewards, masks, actions, values, true_rewards = runner.run()
-        _, _, _ = model.train(obs, states, rewards, masks, actions, values)
+    for update in range(1, total_timesteps//nbatch+1):
+        obs, states, rewards, masks, actions, values = runner.run()
+        policy_loss, value_loss, policy_entropy = model.train(obs, states, rewards, masks, actions, values)
         model.old_obs = obs
-        true_rewards = [true_reward.reshape(-1, max_episode_len).sum(axis=1) for true_reward in true_rewards]
+        nseconds = time.time() - tstart
+        fps = int((update * nbatch) / nseconds)
+        if update % log_interval == 0 or update == 1:
+            ev = [explained_variance(values[k], rewards[k]) for k in range(model.num_agents)]
+            logger.record_tabular("nupdates", update)
+            logger.record_tabular("total_timesteps", update*nbatch)
+            logger.record_tabular("fps", fps)
+            for k in range(model.num_agents):
+                # logger.record_tabular('reward %d' % k, np.mean(rewards[k]))
+                logger.record_tabular("explained_variance %d" % k, float(ev[k]))
+                logger.record_tabular("policy_entropy %d" % k, float(policy_entropy[k]))
+                logger.record_tabular("policy_loss %d" % k, float(policy_loss[k]))
+                logger.record_tabular("value_loss %d" % k, float(value_loss[k]))
+            logger.dump_tabular()
 
-        logger.record_tabular("training_iteration", update)
-        logger.record_tabular("timesteps_total", update * nbatch)
-        logger.record_tabular("policy_reward_mean", {"policy_%d" % k: np.mean(true_rewards[k]) for k in range(model.num_agents)})
-        logger.dump_tabular()
-
-        if save_interval and update % save_interval == 0 and logger.get_dir():
-            savepath = os.path.join(logger.get_dir(), "checkpoint_%d" % update)
-            os.makedirs(savepath, exist_ok=True)
+        if save_interval and (update % save_interval == 0 or update == 1) and logger.get_dir():
+            savepath = osp.join(logger.get_dir(), 'checkpoint%.5i' % update)
             print('Saving to', savepath)
-            model.save(os.path.join(savepath, "checkpoint-%d" % update))
-
+            model.save(savepath)
     coord.request_stop()
     # coord.join(enqueue_threads)
+    env.close()
 
 

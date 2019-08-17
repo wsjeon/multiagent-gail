@@ -81,23 +81,14 @@ class HumanOutputFormat(OutputFormat):
 class JSONOutputFormat(OutputFormat):
     def __init__(self, file):
         self.file = file
-        self.file.write("{")
-        self.first_line = True
 
     def writekvs(self, kvs):
-        if self.first_line:
-            self.file.write("\n")
-            self.first_line = False
-        else:
-            self.file.write(",\n")
-
-        from ray.tune.logger import _SafeFallbackEncoder
-        self.file.write('"{}": '.format(str(kvs["timesteps_total"])))
-        json.dump(kvs, self.file, cls=_SafeFallbackEncoder)
+        for k, v in kvs.items():
+            if hasattr(v, 'dtype'):
+                v = v.tolist()
+                kvs[k] = float(v)
+        self.file.write(json.dumps(kvs) + '\n')
         self.file.flush()
-
-    def close(self):
-        self.file.write("}")
 
 
 class TensorBoardOutputFormat(OutputFormat):
@@ -110,8 +101,7 @@ class TensorBoardOutputFormat(OutputFormat):
         self.step = 1
         prefix = 'events'
         path = osp.join(osp.abspath(dir), prefix)
-        import tensorflow.compat.v1 as tensorflow
-        tensorflow.disable_v2_behavior()
+        import tensorflow
         from tensorflow.python import pywrap_tensorflow        
         from tensorflow.core.util import event_pb2
         from tensorflow.python.util import compat
@@ -145,7 +135,7 @@ def make_output_format(fmt, ev_dir):
         log_file = open(osp.join(ev_dir, 'log.txt'), 'wt')
         return HumanOutputFormat(log_file)
     elif fmt == 'json':
-        json_file = open(osp.join(ev_dir, 'result.json'), 'wt')
+        json_file = open(osp.join(ev_dir, 'progress.json'), 'wt')
         return JSONOutputFormat(json_file)
     elif fmt == 'tensorboard':
         return TensorBoardOutputFormat(osp.join(ev_dir, 'tb'))

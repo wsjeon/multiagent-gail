@@ -1,6 +1,6 @@
 import gym
 import click
-import multiagent_v2
+import multiagent
 import time
 import tensorflow as tf
 import make_env

@@ -4,7 +4,7 @@ import numpy as np
 import os
 import os.path as osp
 
-import make_env_v2 as make_env
+import make_env
 import gym
 import logging
 from rl import bench
@@ -50,16 +50,15 @@ def learn(policy, env, expert, seed, total_timesteps=int(40e6), gamma=0.99, lam=
                                           'simple_push', 'simple_tag']))
 @click.option('--expert_path', type=click.STRING)
 @click.option('--seed', type=click.INT, default=1)
-@click.option('--max_episode_len', type=click.INT, default=50)
-def train(logdir, env, expert_path, seed, max_episode_len):
-    print(logdir, env, expert_path, seed, max_episode_len)
+def train(logdir, env, expert_path, seed):
+    print(logdir, env, expert_path, seed)
     logger.configure(logdir, format_strs=['stdout', 'log', 'json', 'tensorboard'])
     expert = MADataSet(expert_path, ret_threshold=-10, traj_limitation=200)
     env_id = env
 
     def create_env(rank):
         def _thunk():
-            env = make_env.make_env(env_id, max_episode_len=max_episode_len)
+            env = make_env.make_env(env_id)
             env.seed(seed + rank)
             env = bench.Monitor(env, logger.get_dir() and os.path.join(logger.get_dir(), str(rank)),
                                 allow_early_resets=True)
