@@ -101,7 +101,8 @@ class TensorBoardOutputFormat(OutputFormat):
         self.step = 1
         prefix = 'events'
         path = osp.join(osp.abspath(dir), prefix)
-        import tensorflow
+        import tensorflow.compat.v1 as tensorflow
+        tensorflow.disable_v2_behavior()
         from tensorflow.python import pywrap_tensorflow        
         from tensorflow.core.util import event_pb2
         from tensorflow.python.util import compat

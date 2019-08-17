@@ -1,5 +1,6 @@
 import numpy as np
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
+tf.disable_v2_behavior()
 
 import rl.common.tf_util as U
 from rl.acktr.utils import conv, fc, dense, conv_to_fc, sample, kl_div
