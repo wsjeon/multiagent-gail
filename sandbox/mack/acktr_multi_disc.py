@@ -31,9 +31,6 @@ class Model(object):
         config.gpu_options.allow_growth = True
         self.sess = sess = tf.Session(config=config)
         nbatch = nenvs * nsteps
-        # NOTE: They don't have to make it as list.
-        # ob_space = [ob_space]
-        # ac_space = [ac_space]
         self.num_agents = num_agents = len(ob_space)
         if identical is None:
             identical = [False for _ in range(self.num_agents)]
@@ -49,8 +46,6 @@ class Model(object):
                 h = k
         pointer[h] = num_agents
 
-        # print(pointer)
-
         A, ADV, R, PG_LR = [], [], [], []
         for k in range(num_agents):
             if identical[k]:
@@ -59,9 +54,6 @@ class Model(object):
                 R.append(R[-1])
                 PG_LR.append(PG_LR[-1])
             else:
-                # print(k)
-                # NOTE: Seems like action input should be an index of discrete action.
-                # A.append(tf.placeholder(tf.int32, [nbatch * scale[k], ac_space[k].shape[0]]))
                 A.append(tf.placeholder(tf.int32, [nbatch * scale[k]], name='A%d' % k))
                 ADV.append(tf.placeholder(tf.float32, [nbatch * scale[k]], name='ADV%d' % k))
                 R.append(tf.placeholder(tf.float32, [nbatch * scale[k]], name='R%d' % k))
@@ -92,35 +84,24 @@ class Model(object):
                                          nenvs, 1, nstack, reuse=False, name='%d' % k))
                 train_model.append(policy(sess, ob_space[k], ac_space[k], ob_space, ac_space,
                                           nenvs * scale[k], nsteps, nstack, reuse=True, name='%d' % k))
-            # NOTE: Unused
-            # ac = ac_space[k].shape[0]
-            # NOTE: tf.reduce_sum dimension mismatch. Maybe lld will cover this.
-            # logpac = tf.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(
-            #     logits=train_model[k].pi, labels=A[k]), axis=1)
+
             logpac = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=train_model[k].pi, labels=A[k])
-            # logpac = 0.5 * tf.reduce_sum(tf.square((A[k] - stats[:, :ac]) / stats[:, ac:]), axis=-1) \
-            #          + 0.5 * np.log(2.0 * np.pi) * tf.to_float(tf.shape(A[k])[-1]) \
-            #          + tf.reduce_sum(tf.log(stats[:, ac:]), axis=-1)
             lld.append(tf.reduce_mean(logpac))
 
-            ##training loss
             pg_loss.append(tf.reduce_mean(ADV[k] * logpac))
             entropy.append(tf.reduce_mean(cat_entropy(train_model[k].pi)))
-            # entropy.append(tf.reduce_sum(
-            #     train_model[k].logstd + .5 * np.log(2.0 * np.pi * np.e), axis=-1))
             pg_loss[k] = pg_loss[k] - ent_coef * entropy[k]
             vf_loss.append(tf.reduce_mean(mse(tf.squeeze(train_model[k].vf), R[k])))
             train_loss.append(pg_loss[k] + vf_coef * vf_loss[k])
 
-            ##Fisher loss construction
             pg_fisher_loss.append(-tf.reduce_mean(logpac))
             sample_net.append(train_model[k].vf + tf.random_normal(tf.shape(train_model[k].vf)))
             vf_fisher_loss.append(-vf_fisher_coef * tf.reduce_mean(
                 tf.pow(train_model[k].vf - tf.stop_gradient(sample_net[k]), 2)))
             joint_fisher_loss.append(pg_fisher_loss[k] + vf_fisher_loss[k])
 
-        self.policy_params = [] # [find_trainable_variables("policy_%d" % k) for k in range(num_agents)]
-        self.value_params = [] # [find_trainable_variables('value_%d' % k) for k in range(num_agents)]
+        self.policy_params = []
+        self.value_params = []
 
         for k in range(num_agents):
             if identical[k]:
@@ -147,38 +128,39 @@ class Model(object):
         update_stats_op = []
         train_op, clone_op, q_runner = [], [], []
 
-        if use_kfac:
-            for k in range(num_agents):
-                if identical[k]:
-                    optim.append(optim[-1])
-                    train_op.append(train_op[-1])
-                    q_runner.append(q_runner[-1])
-                    clones.append(clones[-1])
-                    clone_op.append(clone_op[-1])
-                else:
-                    with tf.variable_scope('optim_%d' % k):
-                        optim.append(kfac.KfacOptimizer(
-                            learning_rate=PG_LR[k], clip_kl=kfac_clip,
-                            momentum=0.9, kfac_update=1, epsilon=0.01,
-                            stats_decay=0.99, async=0, cold_iter=10,
-                            max_grad_norm=max_grad_norm)
-                        )
-                        update_stats_op.append(optim[k].compute_and_apply_stats(joint_fisher_loss[k], var_list=params[k]))
-                        train_op_, q_runner_ = optim[k].apply_gradients(list(zip(grads[k], params[k])))
-                        train_op.append(train_op_)
-                        q_runner.append(q_runner_)
+        for k in range(num_agents):
+            if identical[k]:
+                optim.append(optim[-1])
+                train_op.append(train_op[-1])
+                q_runner.append(q_runner[-1])
+                clones.append(clones[-1])
+                clone_op.append(clone_op[-1])
+            else:
+                with tf.variable_scope('optim_%d' % k):
+                    optim.append(kfac.KfacOptimizer(
+                        learning_rate=PG_LR[k], clip_kl=kfac_clip,
+                        momentum=0.9, kfac_update=1, epsilon=0.01,
+                        stats_decay=0.99, async=0, cold_iter=10,
+                        max_grad_norm=max_grad_norm)
+                    )
+                    # NOTE: I compared this code with irl/mack/gail.py and found this part is different.
+                    # NOTE: I wonder if this can affect the performance.
+                    update_stats_op.append(optim[k].compute_and_apply_stats(joint_fisher_loss[k], var_list=params[k]))
+                    train_op_, q_runner_ = optim[k].apply_gradients(list(zip(grads[k], params[k])))
+                    train_op.append(train_op_)
+                    q_runner.append(q_runner_)
 
-                    with tf.variable_scope('clone_%d' % k):
-                        clones.append(kfac.KfacOptimizer(
-                            learning_rate=PG_LR[k], clip_kl=kfac_clip,
-                            momentum=0.9, kfac_update=1, epsilon=0.01,
-                            stats_decay=0.99, async=0, cold_iter=10,
-                            max_grad_norm=max_grad_norm)
-                        )
-                        update_stats_op.append(clones[k].compute_and_apply_stats(
-                            pg_fisher_loss[k], var_list=self.policy_params[k]))
-                        clone_op_, q_runner_ = clones[k].apply_gradients(list(zip(clone_grads[k], self.policy_params[k])))
-                        clone_op.append(clone_op_)
+                with tf.variable_scope('clone_%d' % k):
+                    clones.append(kfac.KfacOptimizer(
+                        learning_rate=PG_LR[k], clip_kl=kfac_clip,
+                        momentum=0.9, kfac_update=1, epsilon=0.01,
+                        stats_decay=0.99, async=0, cold_iter=10,
+                        max_grad_norm=max_grad_norm)
+                    )
+                    update_stats_op.append(clones[k].compute_and_apply_stats(
+                        pg_fisher_loss[k], var_list=self.policy_params[k]))
+                    clone_op_, q_runner_ = clones[k].apply_gradients(list(zip(clone_grads[k], self.policy_params[k])))
+                    clone_op.append(clone_op_)
 
         update_stats_op = tf.group(*update_stats_op)
         train_ops = train_op
@@ -328,8 +310,6 @@ class Runner(object):
             np.zeros((nenv, )) for k in range(self.num_agents)
         ]
         obs = env.reset()
-        # NOTE: They don't have to make it as list
-        # obs = [obs]
         self.update_obs(obs)
         self.gamma = gamma
         self.lam = lam
@@ -391,8 +371,8 @@ class Runner(object):
             mb_actions[k] = np.asarray(mb_actions[k], dtype=np.int32).swapaxes(1, 0)
             mb_values[k] = np.asarray(mb_values[k], dtype=np.float32).swapaxes(1, 0)
             mb_dones[k] = np.asarray(mb_dones[k], dtype=np.bool).swapaxes(1, 0)
-            mb_masks[k] = mb_dones[k][:, :-1]  # FIXME: WHAT IS THE PURPOSE OF MASK HERE?
-            mb_dones[k] = mb_dones[k][:, 1:]  # NOTE: THIS IS TRUE DONES>>> OKAY
+            mb_masks[k] = mb_dones[k][:, :-1]
+            mb_dones[k] = mb_dones[k][:, 1:]
 
         last_values = self.model.value(self.obs, self.actions) # self.states, self.dones)
 
@@ -415,8 +395,6 @@ class Runner(object):
             mb_returns[k] = mb_returns[k].flatten()
             mb_masks[k] = mb_masks[k].flatten()
             mb_values[k] = mb_values[k].flatten()
-            # NOTE: Reshape might not be needed.
-            # mb_actions[k] = np.reshape(mb_actions[k], [-1, mb_actions[k].shape[-1]])
             mb_actions[k] = mb_actions[k].flatten()
 
         # mb_returns = [np.zeros_like(mb_rewards[k]) for k in range(self.num_agents)]
@@ -464,16 +442,29 @@ def learn(policy, env, seed, total_timesteps=int(40e6), gamma=0.995, lam=0.95, l
     nbatch = nenvs * nsteps
     coord = tf.train.Coordinator()
     # enqueue_threads = [q_runner.create_threads(model.sess, coord=coord, start=True) for q_runner in model.q_runner]
+    time_prev = time.time()
     for update in range(1, total_timesteps // nbatch + 1):
         obs, states, rewards, masks, actions, values, true_rewards = runner.run()
         _, _, _ = model.train(obs, states, rewards, masks, actions, values)
         model.old_obs = obs
         true_rewards = [true_reward.reshape(-1, max_episode_len).sum(axis=1) for true_reward in true_rewards]
+        policy_reward_mean = {"policy_%d" % k: np.mean(true_rewards[k]) for k in range(model.num_agents)}
 
         logger.record_tabular("training_iteration", update)
         logger.record_tabular("timesteps_total", update * nbatch)
-        logger.record_tabular("policy_reward_mean", {"policy_%d" % k: np.mean(true_rewards[k]) for k in range(model.num_agents)})
+        logger.record_tabular("policy_reward_mean", policy_reward_mean)
         logger.dump_tabular()
+
+        if log_interval and update % log_interval == 0:
+            time_cur = time.time()
+            print("steps: {}, episodes: {}, mean episode reward: {}, agent episode reward: {}, time: {}".format(
+                update * nbatch,
+                int(update * nbatch / max_episode_len),
+                sum(list(policy_reward_mean.values())),
+                policy_reward_mean,
+                round(time_cur - time_prev, 3)
+            ))
+            time_prev = time_cur
 
         if save_interval and update % save_interval == 0 and logger.get_dir():
             savepath = os.path.join(logger.get_dir(), "checkpoint_%d" % update)

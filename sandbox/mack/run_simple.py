@@ -65,11 +65,12 @@ def train(logdir, env_id, num_timesteps, lr, timesteps_per_batch, seed, num_cpu,
           lr=lr,
           ent_coef=0.00,
           identical=make_env.get_identical(env_id),
-          log_interval=20,
+          log_interval=50,
           save_interval=int(num_timesteps/timesteps_per_batch),
           max_episode_len=max_episode_len)
     logger.Logger.CURRENT.close()
     env.close()
+
 
 def main(args):
     args.exp_name += "-{}".format(args.exp_id)
