@@ -1,4 +1,4 @@
-import os.path as osp
+import os
 import time
 
 import joblib
@@ -398,6 +398,7 @@ class Runner(object):
 
         mb_advs = [np.zeros_like(mb_rewards[k]) for k in range(self.num_agents)]
         mb_returns = [[] for _ in range(self.num_agents)]
+        mb_true_returns = [mb_rewards[k].flatten() for k in range(self.num_agents)]
 
         lastgaelam = 0.0
         for k in range(self.num_agents):
@@ -437,59 +438,50 @@ class Runner(object):
         #     mb_values[k] = mb_values[k].flatten()
         #     mb_actions[k] = np.reshape(mb_actions[k], [-1, mb_actions[k].shape[-1]])
 
-        return mb_obs, mb_states, mb_returns, mb_masks, mb_actions, mb_values
+        return mb_obs, mb_states, mb_returns, mb_masks, mb_actions, mb_values, mb_true_returns
 
 
 def learn(policy, env, seed, total_timesteps=int(40e6), gamma=0.995, lam=0.95, log_interval=1, nprocs=32, nsteps=20,
           nstack=1, ent_coef=0.00, vf_coef=0.5, vf_fisher_coef=1.0, lr=0.25, max_grad_norm=0.5,
-          kfac_clip=0.001, save_interval=100, lrschedule='linear', identical=None):
+          kfac_clip=0.001, save_interval=100, lrschedule='linear', identical=None, max_episode_len=50):
     tf.reset_default_graph()
     set_global_seeds(seed)
 
     nenvs = env.num_envs
     ob_space = env.observation_space
     ac_space = env.action_space
-    make_model = lambda: Model(policy, ob_space, ac_space, nenvs, total_timesteps, nprocs=nprocs, nsteps
-                                =nsteps, nstack=nstack, ent_coef=ent_coef, vf_coef=vf_coef, vf_fisher_coef=
-                                vf_fisher_coef, lr=lr, max_grad_norm=max_grad_norm, kfac_clip=kfac_clip,
-                                lrschedule=lrschedule, identical=identical)
+    make_model = lambda: Model(policy, ob_space, ac_space, nenvs, total_timesteps, nprocs=nprocs, nsteps=nsteps,
+                               nstack=nstack, ent_coef=ent_coef, vf_coef=vf_coef, vf_fisher_coef=vf_fisher_coef,
+                               lr=lr, max_grad_norm=max_grad_norm, kfac_clip=kfac_clip,
+                               lrschedule=lrschedule, identical=identical)
     if save_interval and logger.get_dir():
         import cloudpickle
-        with open(osp.join(logger.get_dir(), 'make_model.pkl'), 'wb') as fh:
+        with open(os.path.join(logger.get_dir(), 'make_model.pkl'), 'wb') as fh:
             fh.write(cloudpickle.dumps(make_model))
     model = make_model()
 
     runner = Runner(env, model, nsteps=nsteps, nstack=nstack, gamma=gamma, lam=lam)
-    nbatch = nenvs*nsteps
-    tstart = time.time()
+    nbatch = nenvs * nsteps
     coord = tf.train.Coordinator()
     # enqueue_threads = [q_runner.create_threads(model.sess, coord=coord, start=True) for q_runner in model.q_runner]
-    for update in range(1, total_timesteps//nbatch+1):
-        # print(total_timesteps//nbatch); assert False  # NOTE: = 55000
-        obs, states, rewards, masks, actions, values = runner.run()
-        policy_loss, value_loss, policy_entropy = model.train(obs, states, rewards, masks, actions, values)
+    for update in range(1, total_timesteps // nbatch + 1):
+        obs, states, rewards, masks, actions, values, true_rewards = runner.run()
+        _, _, _ = model.train(obs, states, rewards, masks, actions, values)
         model.old_obs = obs
-        nseconds = time.time() - tstart
-        fps = int((update * nbatch) / nseconds)
-        if update % log_interval == 0 or update == 1:
-            ev = [explained_variance(values[k], rewards[k]) for k in range(model.num_agents)]
-            logger.record_tabular("nupdates", update)
-            logger.record_tabular("total_timesteps", update*nbatch)
-            logger.record_tabular("fps", fps)
-            for k in range(model.num_agents):
-                logger.record_tabular("reward %d" % k, np.mean(rewards[k]))
-                logger.record_tabular("explained_variance %d" % k, float(ev[k]))
-                logger.record_tabular("policy_entropy %d" % k, float(policy_entropy[k]))
-                logger.record_tabular("policy_loss %d" % k, float(policy_loss[k]))
-                logger.record_tabular("value_loss %d" % k, float(value_loss[k]))
-            logger.dump_tabular()
+        true_rewards = [true_reward.reshape(-1, max_episode_len).sum(axis=1) for true_reward in true_rewards]
 
-        if save_interval and (update % save_interval == 0 or update == 1) and logger.get_dir():
-            savepath = osp.join(logger.get_dir(), 'checkpoint%.5i' % update)
+        logger.record_tabular("training_iteration", update)
+        logger.record_tabular("timesteps_total", update * nbatch)
+        logger.record_tabular("policy_reward_mean", {"policy_%d" % k: np.mean(true_rewards[k]) for k in range(model.num_agents)})
+        logger.dump_tabular()
+
+        if save_interval and update % save_interval == 0 and logger.get_dir():
+            savepath = os.path.join(logger.get_dir(), "checkpoint_%d" % update)
+            os.makedirs(savepath, exist_ok=True)
             print('Saving to', savepath)
-            model.save(savepath)
+            model.save(os.path.join(savepath, "checkpoint-%d" % update))
+
     coord.request_stop()
     # coord.join(enqueue_threads)
-    env.close()
 
 
